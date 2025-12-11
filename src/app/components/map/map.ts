@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as L from 'leaflet';
@@ -13,7 +13,7 @@ import { MapUtils } from '../../shared/utils/map.utils';
   templateUrl: './map.html',
   styleUrl: './map.css',
 })
-export class MapComponent implements OnInit, OnDestroy {
+export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('mapContainer', { static: false }) mapContainer!: ElementRef;
 
   searchType: 'address' | 'chip' = 'address';
@@ -48,8 +48,12 @@ export class MapComponent implements OnInit, OnDestroy {
 
   constructor(private searchService: SearchService) {}
 
-  ngOnInit(): void {
-    setTimeout(() => this.initMap(), 0);
+  ngOnInit(): void {}
+
+  ngAfterViewInit(): void {
+    this.initMap();
+    // Leaflet needs a post-render size check when created after view init
+    setTimeout(() => this.map?.invalidateSize(), 100);
   }
 
   ngOnDestroy(): void {
@@ -59,7 +63,10 @@ export class MapComponent implements OnInit, OnDestroy {
   }
 
   private initMap(): void {
-    this.map = L.map('mapContainer', {
+    if (this.map) return;
+    if (!this.mapContainer?.nativeElement) return;
+
+    this.map = L.map(this.mapContainer.nativeElement, {
       center: [4.6097, -74.0817],
       zoom: 14,
       minZoom: 12,
@@ -109,7 +116,6 @@ export class MapComponent implements OnInit, OnDestroy {
     if (!value) return;
 
     this.errorMessage = '';
-    this.results = null;
     this.resultInfo = null;
     this.clearAll();
 
@@ -121,6 +127,7 @@ export class MapComponent implements OnInit, OnDestroy {
       this.searchService.searchChipInfo(chip).subscribe({
         next: (res) => {
           this.results = res;
+          console.log('SIIC CHIP info', res);
 
           const loteId = res?.LOTEID || res?.loteId || res?.LOTLOTE_ID;
           if (!loteId) {
@@ -147,6 +154,7 @@ export class MapComponent implements OnInit, OnDestroy {
     this.searchService.searchByAddress(value).subscribe({
       next: (res) => {
         this.results = res;
+        console.log('SIIC dirección', res);
 
         if (res?.Error) {
           this.errorMessage = res.Error;
@@ -176,6 +184,7 @@ export class MapComponent implements OnInit, OnDestroy {
     this.searchService.searchByChip([chip]).subscribe({
       next: (res) => {
         this.results = res;
+        console.log('CHIP layer geometry', res);
         const features = res.features && res.features.length > 0 ? res.features : [];
 
         if (features.length > 0) {
@@ -200,6 +209,7 @@ export class MapComponent implements OnInit, OnDestroy {
     this.searchService.searchByLoteId([loteId]).subscribe({
       next: (res) => {
         this.results = res;
+        console.log('Lote geometry', res);
         const features = res.features && res.features.length > 0 ? res.features : [];
 
         if (features.length > 0) {
@@ -226,6 +236,7 @@ export class MapComponent implements OnInit, OnDestroy {
     this.searchService.searchByChip([chip]).subscribe({
       next: (res) => {
         this.results = res;
+        console.log('Fallback CHIP geometry', res);
         const features = res.features && res.features.length > 0 ? res.features : [];
 
         if (features.length > 0) {

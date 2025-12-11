@@ -3,6 +3,7 @@
   flex-direction: column;
   height: 100vh;
   padding: 20px;
+  gap: 12px;
 }
 
 .search-config {
@@ -64,10 +65,12 @@
 }
 
 #mapContainer {
-  height: 500px;
+  flex: 1;
+  min-height: 400px;
   width: 100%;
   border: 1px solid #ccc;
   border-radius: 4px;
+  overflow: hidden;
 }
 
 .results {
