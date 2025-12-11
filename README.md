@@ -5,7 +5,7 @@ Mapa Leaflet + Esri para buscar predios de Bogotá por Dirección o CHIP usando 
 ## Requisitos
 
 - Node.js 18+ (LTS recomendado).
-- npm (incluido con Node). No necesitas Angular CLI global; usamos `npx`.
+- npm (incluido con Node).
 
 ## Instalación
 
