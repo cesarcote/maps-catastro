@@ -34,18 +34,5 @@
     {{ errorMessage }}
   </div>
 
-  <div *ngIf="resultInfo" class="results">
-    <h3>Datos del predio</h3>
-    <div>
-      CHIP: <strong>{{ resultInfo.chip || '—' }}</strong>
-    </div>
-    <div>
-      LOTEID: <strong>{{ resultInfo.loteId || '—' }}</strong>
-    </div>
-    <div>
-      Dirección: <strong>{{ resultInfo.address || '—' }}</strong>
-    </div>
-  </div>
-
   <div id="mapContainer" #mapContainer></div>
 </div>

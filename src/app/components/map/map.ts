@@ -141,7 +141,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
             address: res?.DIRECCION_REAL || res?.DIRECCION,
           };
 
-          this.fetchGeometryByLote(String(loteId), true, chip);
+          this.fetchGeometryByLote(String(loteId), true);
         },
         error: (err) => {
           this.errorMessage = 'Error buscando CHIP';
@@ -180,32 +180,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private fetchByChip(chip: string): void {
-    this.searchService.searchByChip([chip]).subscribe({
-      next: (res) => {
-        this.results = res;
-        console.log('CHIP layer geometry', res);
-        const features = res.features && res.features.length > 0 ? res.features : [];
-
-        if (features.length > 0) {
-          this.updateResultInfoFromFeature(features[0], chip);
-          this.displayFeatures(features);
-        } else {
-          this.errorMessage = 'No se encontraron resultados para el CHIP ingresado.';
-        }
-      },
-      error: (err) => {
-        this.errorMessage = 'Error buscando CHIP';
-        console.error(err);
-      },
-    });
-  }
-
-  private fetchGeometryByLote(
-    loteId: string,
-    isChipSearch: boolean = false,
-    fallbackChip?: string
-  ): void {
+  private fetchGeometryByLote(loteId: string, isChipSearch: boolean = false): void {
     this.searchService.searchByLoteId([loteId]).subscribe({
       next: (res) => {
         this.results = res;
@@ -216,38 +191,13 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           this.updateResultInfoFromFeature(features[0]);
           this.displayFeatures(features);
         } else {
-          if (isChipSearch && fallbackChip) {
-            this.fetchGeometryByChipGeometry(fallbackChip);
-          } else {
-            this.errorMessage = isChipSearch
-              ? 'No se encontraron resultados para el CHIP ingresado.'
-              : 'No se encontraron resultados para el LOTEID obtenido de la dirección.';
-          }
+          this.errorMessage = isChipSearch
+            ? 'No se encontraron resultados para el CHIP ingresado.'
+            : 'No se encontraron resultados para el LOTEID obtenido de la dirección.';
         }
       },
       error: (err) => {
         this.errorMessage = isChipSearch ? 'Error buscando CHIP' : 'Error consultando geometría';
-        console.error(err);
-      },
-    });
-  }
-
-  private fetchGeometryByChipGeometry(chip: string): void {
-    this.searchService.searchByChip([chip]).subscribe({
-      next: (res) => {
-        this.results = res;
-        console.log('Fallback CHIP geometry', res);
-        const features = res.features && res.features.length > 0 ? res.features : [];
-
-        if (features.length > 0) {
-          this.updateResultInfoFromFeature(features[0], chip);
-          this.displayFeatures(features);
-        } else {
-          this.errorMessage = 'No se encontraron resultados para el CHIP ingresado.';
-        }
-      },
-      error: (err) => {
-        this.errorMessage = 'Error consultando geometría por CHIP';
         console.error(err);
       },
     });

@@ -1,59 +1,55 @@
-# MapsApp
+# Maps Catastro
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.0.3.
+Mapa Leaflet + Esri para buscar predios de Bogotá por Dirección o CHIP usando los servicios públicos de Catastro. Dibuja polígono, centra y marca el predio.
 
-## Development server
+## Requisitos
 
-To start a local development server, run:
+- Node.js 18+ (LTS recomendado).
+- npm (incluido con Node). No necesitas Angular CLI global; usamos `npx`.
+
+## Instalación
 
 ```bash
+npm install
+```
+
+## Correr en desarrollo
+
+```bash
+npm start
+# o
 ng serve
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Abre `http://localhost:4200/`.
 
-## Code scaffolding
+## Flujo de búsqueda
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+1. Selecciona Dirección o CHIP, escribe el valor y pulsa Buscar.
+2. Dirección: SIIC (CalcularAreaCons) `Opcion=2&Identificador=<direccion>` → devuelve `LOTEID` (y CHIP si existe).
+3. CHIP: SIIC `Opcion=3&Identificador=<chip>` → devuelve `LOTEID` y dirección real.
+4. Geometría: con `LOTEID` se consulta `catastro1/MapServer/2/query` (`apiUrlQuery`) en WGS84 (`outSR=4326`). `where` busca en `LOTLOTE_ID`.
+5. Render: Leaflet + esri-leaflet dibuja polígono, ajusta límites y coloca marcador custom (popup con CHIP/dirección/área si viene).
 
-```bash
-ng generate component component-name
-```
+## Capa base (Catastro)
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+- Tiled layer: `https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_base_3857/MapServer`
+- Opacidad baja al iniciar zoom y vuelve al terminar.
 
-```bash
-ng generate --help
-```
+## Servicios usados
 
-## Building
+- SIIC (CalcularAreaCons):
+  - Dirección → `.../consultaSIIC?Opcion=2&Identificador=<direccion>&f=json`
+  - CHIP → `.../consultaSIIC?Opcion=3&Identificador/<chip>&f=json`
+- Geometría por LOTE: `catastro1/MapServer/2/query`
+  - Params: `where=LOTLOTE_ID IN (...)`, `outFields=*`, `returnGeometry=true`, `outSR=4326`, `f=json`.
 
-To build the project run:
+## Comandos útiles
 
-```bash
-ng build
-```
+- Lint: `npx ng lint`
+- Build prod: `npx ng build --configuration production`
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+## Notas
 
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- Íconos Leaflet copiados en `public/`.
+- Si el servicio no devuelve geometría para el LOTEID, verás mensaje de error y no se pinta el polígono.
