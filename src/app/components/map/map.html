@@ -1,0 +1,56 @@
+<div class="container">
+  <div class="search-config">
+    <label>
+      <input type="radio" name="searchType" value="address" [(ngModel)]="searchType" />
+      Buscar por Dirección
+    </label>
+    <label>
+      <input type="radio" name="searchType" value="chip" [(ngModel)]="searchType" />
+      Buscar por CHIP
+    </label>
+  </div>
+
+  <div class="search-box">
+    <input
+      type="text"
+      [(ngModel)]="searchValue"
+      [placeholder]="searchType === 'address' ? 'Ingrese dirección' : 'Ingrese CHIP'"
+    />
+    <button (click)="search()">Buscar</button>
+  </div>
+
+  <div class="examples">
+    <span>Ejemplos: </span>
+    <button
+      *ngFor="let example of currentExamples"
+      class="example-btn"
+      (click)="setExample(example)"
+    >
+      {{ example }}
+    </button>
+  </div>
+
+  <div *ngIf="errorMessage" class="error">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="resultInfo" class="results">
+    <h3>Datos del predio</h3>
+    <div>
+      CHIP: <strong>{{ resultInfo.chip || '—' }}</strong>
+    </div>
+    <div>
+      LOTEID: <strong>{{ resultInfo.loteId || '—' }}</strong>
+    </div>
+    <div>
+      Dirección: <strong>{{ resultInfo.address || '—' }}</strong>
+    </div>
+  </div>
+
+  <div *ngIf="results" class="results">
+    <h4>Respuesta completa</h4>
+    <pre>{{ results | json }}</pre>
+  </div>
+
+  <div id="mapContainer" #mapContainer></div>
+</div>

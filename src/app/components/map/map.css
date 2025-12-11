@@ -1,0 +1,88 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 20px;
+}
+
+.search-config {
+  margin-bottom: 15px;
+  display: flex;
+  gap: 20px;
+}
+
+.search-config label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.search-box {
+  margin-bottom: 15px;
+}
+
+.search-box input {
+  padding: 10px;
+  width: 300px;
+  margin-right: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.search-box button {
+  padding: 10px 20px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.search-box button:hover {
+  background: #0056b3;
+}
+
+.examples {
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.example-btn {
+  padding: 5px 10px;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.example-btn:hover {
+  background: #e0e0e0;
+}
+
+#mapContainer {
+  height: 500px;
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.results {
+  margin-bottom: 20px;
+  background: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.error {
+  color: red;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: #ffe6e6;
+  border-radius: 4px;
+}
