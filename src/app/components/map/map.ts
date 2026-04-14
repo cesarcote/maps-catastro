@@ -24,9 +24,35 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   addressExamples = ['KR 119B 73B 15', 'KR 21 9A 50 LC 278'];
   chipExamples = ['AAA0036YERJ', 'AAA0091PPTO'];
+  private readonly CATASTRO_LAYER_PRESET_KEYS = [
+    'catastroBase',
+    'lote',
+    'sectorCatastral',
+    'mallaVial',
+    'all',
+  ] as const;
+  private readonly CATASTRO_LAYER_PRESETS: Record<(typeof this.CATASTRO_LAYER_PRESET_KEYS)[number], number[]> =
+    {
+      lote: [19, 43, 67],
+      sectorCatastral: [3, 27, 51, 75],
+      mallaVial: [9, 33, 58, 80, 114, 146, 333, 368, 400, 421],
+      catastroBase: [3, 9, 19, 27, 33, 43, 51, 58, 67, 75, 80],
+      all: Array.from({ length: 454 }, (_, index) => index),
+    };
+  layerPresetOptions = [
+    { key: 'catastroBase', label: 'Catastro base' },
+    { key: 'lote', label: 'Lote' },
+    { key: 'sectorCatastral', label: 'Sector catastral' },
+    { key: 'mallaVial', label: 'Malla vial' },
+    { key: 'all', label: 'Todas (0-453)' },
+  ] as const;
+  layerPreset: (typeof this.CATASTRO_LAYER_PRESET_KEYS)[number] = 'catastroBase';
+  layerIdsInput: string = '';
+  selectedLayerCount: number = 0;
 
   private map!: L.Map;
   private geometryLayer = L.layerGroup();
+  private catastroLayer: any;
 
   private readonly DEFAULT_POLYGON_STYLE = {
     color: '#e3192f',
@@ -37,6 +63,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private readonly CATASTRO_TILE_URL =
     'https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_base_3857/MapServer';
+  private readonly CATASTRO_VISIBLE_LAYER_IDS: number[] =
+    this.CATASTRO_LAYER_PRESETS['catastroBase'];
 
   get currentExamples(): string[] {
     return this.searchType === 'address' ? this.addressExamples : this.chipExamples;
@@ -48,7 +76,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   constructor(private searchService: SearchService) {}
 
-  ngOnInit(): void {}
+  ngOnInit(): void {
+    this.selectedLayerCount = this.CATASTRO_VISIBLE_LAYER_IDS.length;
+    this.layerIdsInput = this.CATASTRO_VISIBLE_LAYER_IDS.join(', ');
+  }
 
   ngAfterViewInit(): void {
     this.initMap();
@@ -77,7 +108,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     this.initMarkerIcons();
-    this.addCatastroTileLayer();
+    this.addCatastroDynamicLayer();
     this.geometryLayer.addTo(this.map);
   }
 
@@ -96,19 +127,58 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     L.Marker.prototype.options.icon = iconDefault;
   }
 
-  private addCatastroTileLayer(): void {
-    const catastroLayer = esri.tiledMapLayer({
+  private addCatastroDynamicLayer(): void {
+    const catastroLayer = esri.dynamicMapLayer({
       url: this.CATASTRO_TILE_URL,
       opacity: 0.8,
       maxZoom: 20,
       attribution:
         'Powered by <a href="https://www.esri.com">Esri</a> | IDECA - UAECD, Secretaría General de la Alcaldía Mayor de Bogotá D.C.',
     });
+    this.catastroLayer = catastroLayer;
+    catastroLayer.setLayers(this.CATASTRO_VISIBLE_LAYER_IDS);
 
     this.map.on('zoomstart', () => catastroLayer.setOpacity(0.3));
     this.map.on('zoomend', () => catastroLayer.setOpacity(0.8));
 
     catastroLayer.addTo(this.map);
+  }
+
+  onLayerPresetChange(): void {
+    const presetIds = this.CATASTRO_LAYER_PRESETS[this.layerPreset];
+    if (!presetIds) {
+      return;
+    }
+    this.applyLayerIds(presetIds);
+  }
+
+  applyLayerIdsFromInput(): void {
+    const rawValues = this.layerIdsInput.split(/[\s,]+/);
+    const ids = rawValues
+      .filter((value) => value !== '')
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 0 && value <= 453);
+
+    this.applyLayerIds(ids);
+  }
+
+  selectAllLayers(): void {
+    this.layerPreset = 'all';
+    this.applyLayerIds(this.CATASTRO_LAYER_PRESETS['all']);
+  }
+
+  clearLayerSelection(): void {
+    this.applyLayerIds([]);
+  }
+
+  private applyLayerIds(ids: number[]): void {
+    const uniqueIds = Array.from(new Set(ids)).sort((a, b) => a - b);
+    this.selectedLayerCount = uniqueIds.length;
+    this.layerIdsInput = uniqueIds.join(', ');
+    if (!this.catastroLayer) {
+      return;
+    }
+    this.catastroLayer.setLayers(uniqueIds);
   }
 
   search(): void {

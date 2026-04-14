@@ -30,6 +30,35 @@
     </button>
   </div>
 
+  <div class="layer-panel">
+    <div class="layer-header">
+      <strong>Capas dinámicas</strong>
+      <span>{{ selectedLayerCount }} IDs activos</span>
+    </div>
+
+    <div class="layer-row">
+      <label for="layerPreset">Preset</label>
+      <select id="layerPreset" [(ngModel)]="layerPreset" (change)="onLayerPresetChange()">
+        <option *ngFor="let option of layerPresetOptions" [value]="option.key">
+          {{ option.label }}
+        </option>
+      </select>
+      <button type="button" (click)="selectAllLayers()">Todas</button>
+      <button type="button" (click)="clearLayerSelection()">Ninguna</button>
+    </div>
+
+    <div class="layer-row">
+      <label for="layerIdsInput">IDs</label>
+      <input
+        id="layerIdsInput"
+        type="text"
+        [(ngModel)]="layerIdsInput"
+        placeholder="Ej: 3, 9, 19, 27"
+      />
+      <button type="button" (click)="applyLayerIdsFromInput()">Aplicar IDs</button>
+    </div>
+  </div>
+
   <div *ngIf="errorMessage" class="error">
     {{ errorMessage }}
   </div>

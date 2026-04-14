@@ -49,6 +49,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .example-btn {
@@ -62,6 +63,57 @@
 
 .example-btn:hover {
   background: #e0e0e0;
+}
+
+.layer-panel {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.layer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.layer-row label {
+  min-width: 42px;
+}
+
+.layer-row select,
+.layer-row input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.layer-row input {
+  min-width: 320px;
+  flex: 1;
+}
+
+.layer-row button {
+  padding: 8px 12px;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.layer-row button:hover {
+  background: #e4e4e4;
 }
 
 #mapContainer {
