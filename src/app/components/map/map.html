@@ -30,32 +30,113 @@
     </button>
   </div>
 
+  <!-- Layer Mode Panel -->
   <div class="layer-panel">
     <div class="layer-header">
-      <strong>Capas dinámicas</strong>
-      <span>{{ selectedLayerCount }} IDs activos</span>
+      <strong>Capas del mapa</strong>
+      <div class="mode-toggle">
+        <button
+          type="button"
+          class="mode-btn"
+          [class.active]="layerMode === 'base'"
+          (click)="setLayerMode('base')"
+        >
+          🗺️ Mapa Base
+        </button>
+        <button
+          type="button"
+          class="mode-btn"
+          [class.active]="layerMode === 'filter'"
+          (click)="setLayerMode('filter')"
+        >
+          🔍 Filtrar Capas
+        </button>
+      </div>
     </div>
 
-    <div class="layer-row">
-      <label for="layerPreset">Preset</label>
-      <select id="layerPreset" [(ngModel)]="layerPreset" (change)="onLayerPresetChange()">
-        <option *ngFor="let option of layerPresetOptions" [value]="option.key">
-          {{ option.label }}
-        </option>
-      </select>
-      <button type="button" (click)="selectAllLayers()">Todas</button>
-      <button type="button" (click)="clearLayerSelection()">Ninguna</button>
+    <!-- Base mode info -->
+    <div *ngIf="layerMode === 'base'" class="mode-info">
+      Usando cache de tiles — todas las capas visibles a todos los niveles de zoom.
     </div>
 
-    <div class="layer-row">
-      <label for="layerIdsInput">IDs</label>
-      <input
-        id="layerIdsInput"
-        type="text"
-        [(ngModel)]="layerIdsInput"
-        placeholder="Ej: 3, 9, 19, 27"
-      />
-      <button type="button" (click)="applyLayerIdsFromInput()">Aplicar IDs</button>
+    <!-- Filter mode: thematic group checkboxes -->
+    <div *ngIf="layerMode === 'filter'" class="filter-section">
+      <div class="filter-actions">
+        <span class="filter-count">{{ checkedGroupCount }} grupos / {{ selectedLayerCount }} IDs activos</span>
+        <button type="button" class="action-btn" (click)="selectAllGroups()">Todas</button>
+        <button type="button" class="action-btn" (click)="clearAllGroups()">Ninguna</button>
+      </div>
+
+      <div class="group-grid">
+        <label
+          *ngFor="let group of layerGroups"
+          class="group-checkbox"
+          [class.checked]="group.checked"
+        >
+          <input
+            type="checkbox"
+            [(ngModel)]="group.checked"
+            (change)="onGroupToggle()"
+          />
+          <span class="group-label">{{ group.label }}</span>
+          <span class="group-count">{{ group.ids.length }}</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay Layers Panel (works in both modes) -->
+  <div class="layer-panel overlay-panel">
+    <div class="layer-header">
+      <strong>📍 Capas adicionales</strong>
+      <span class="mode-info" style="margin: 0">Funcionan sobre cualquier modo</span>
+    </div>
+
+    <!-- Nombre Geográfico -->
+    <div class="overlay-section">
+      <div class="overlay-section-header">
+        <strong>Nombre Geográfico</strong>
+        <div class="filter-actions">
+          <span class="filter-count">{{ checkedNombreGeoCount }} activas</span>
+          <button type="button" class="action-btn" (click)="selectAllNombreGeo()">Todas</button>
+          <button type="button" class="action-btn" (click)="clearAllNombreGeo()">Ninguna</button>
+        </div>
+      </div>
+
+      <div class="group-grid">
+        <label
+          *ngFor="let cat of nombreGeoCategories"
+          class="group-checkbox overlay-cat"
+          [class.checked]="cat.checked"
+        >
+          <input
+            type="checkbox"
+            [(ngModel)]="cat.checked"
+            (change)="onNombreGeoToggle()"
+          />
+          <span
+            class="cat-dot"
+            [style.background-color]="cat.color"
+          ></span>
+          <span class="group-label">{{ cat.emoji }} {{ cat.label }}</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- TransMilenio Troncales -->
+    <div class="overlay-section">
+      <label class="group-checkbox troncal-toggle" [class.checked]="showTroncales">
+        <input
+          type="checkbox"
+          [(ngModel)]="showTroncales"
+          (change)="onTroncalesToggle()"
+        />
+        <span
+          class="cat-dot"
+          style="background-color: #e3192f"
+        ></span>
+        <span class="group-label">🚉 Estaciones Troncales TransMilenio</span>
+      </label>
     </div>
   </div>
 

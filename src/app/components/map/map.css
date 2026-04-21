@@ -65,6 +65,8 @@
   background: #e0e0e0;
 }
 
+/* ─── Layer Panel ──────────────────────────────────────────── */
+
 .layer-panel {
   border: 1px solid #ddd;
   border-radius: 6px;
@@ -79,42 +81,190 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
-.layer-row {
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mode-btn {
+  padding: 6px 14px;
+  border: none;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.mode-btn:hover {
+  background: #e8e8e8;
+}
+
+.mode-btn.active {
+  background: #007bff;
+  color: white;
+  font-weight: 600;
+}
+
+/* ─── Base mode info ──────────────────────────────────────── */
+
+.mode-info {
+  font-size: 13px;
+  color: #666;
+  padding: 6px 0;
+}
+
+/* ─── Filter mode section ─────────────────────────────────── */
+
+.filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.filter-actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.layer-row label {
-  min-width: 42px;
+.filter-count {
+  font-size: 13px;
+  color: #555;
+  margin-right: auto;
 }
 
-.layer-row select,
-.layer-row input {
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.layer-row input {
-  min-width: 320px;
-  flex: 1;
-}
-
-.layer-row button {
-  padding: 8px 12px;
+.action-btn {
+  padding: 5px 12px;
   background: #f0f0f0;
   border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
+  font-size: 12px;
 }
 
-.layer-row button:hover {
-  background: #e4e4e4;
+.action-btn:hover {
+  background: #e0e0e0;
 }
+
+/* ─── Group grid (checkboxes) ─────────────────────────────── */
+
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+}
+
+.group-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.group-checkbox:hover {
+  background: #f5f8ff;
+  border-color: #b0c4ff;
+}
+
+.group-checkbox.checked {
+  background: #e8f0fe;
+  border-color: #4285f4;
+}
+
+.group-checkbox input[type='checkbox'] {
+  margin: 0;
+  accent-color: #4285f4;
+}
+
+.group-label {
+  flex: 1;
+}
+
+.group-count {
+  font-size: 11px;
+  color: #999;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.group-checkbox.checked .group-count {
+  background: #c8deff;
+  color: #1a5cc8;
+}
+
+/* ─── Overlay Panel ────────────────────────────────────────── */
+
+.overlay-panel {
+  border-color: #c8deff;
+  background: #fafbff;
+}
+
+.overlay-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overlay-section + .overlay-section {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.overlay-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.overlay-section-header strong {
+  font-size: 13px;
+}
+
+.overlay-cat {
+  font-size: 12px;
+}
+
+.cat-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.troncal-toggle {
+  font-size: 13px;
+}
+
+.service-poi-icon {
+  background: transparent;
+  border: 0;
+}
+
+.service-poi-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ─── Map Container ────────────────────────────────────────── */
 
 #mapContainer {
   flex: 1;
