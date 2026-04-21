@@ -1,9 +1,26 @@
-import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
+import {
+  Component,
+  computed,
+  ElementRef,
+  NgZone,
+  signal,
+  OnInit,
+  OnDestroy,
+  AfterViewInit,
+  ViewChild,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as L from 'leaflet';
 import * as esri from 'esri-leaflet';
 import { SearchService } from '../../services/search';
+import {
+  NEAREST_POI_KINDS,
+  NEAREST_POI_LABELS,
+  NearestPoiDistance,
+  NearestPoiKind,
+  NearestPoiService,
+} from '../../services/nearest-poi';
 import { MapUtils } from '../../shared/utils/map.utils';
 import { NOMBRE_GEO_ICON_BASE64_BY_CODE, TRONCALES_ICON_BASE64 } from './service-icons';
 
@@ -25,7 +42,6 @@ interface OverlayCategory {
   code: string;
   label: string;
   color: string;
-  emoji: string;
   checked: boolean;
 }
 
@@ -34,12 +50,36 @@ type EsriFeatureCollection = {
   features: any[];
 };
 
+type FeatureQueryPage = {
+  featureCollection: EsriFeatureCollection;
+  response: any;
+};
+
+type NombreGeoFeatureCacheEntry = {
+  featuresById: Map<string | number, any>;
+  fullyLoaded: boolean;
+};
+
+type NombreGeoOverlayOptions = {
+  prioritizeViewport?: boolean;
+};
+
+type NearestPoiDistanceStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
+
+type NearestPoiDistanceRow = {
+  kind: NearestPoiKind;
+  label: string;
+  status: NearestPoiDistanceStatus;
+  result?: NearestPoiDistance;
+};
+
 @Component({
   selector: 'app-map',
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './map.html',
   styleUrl: './map.css',
+  providers: [NearestPoiService],
 })
 export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('mapContainer', { static: false }) mapContainer!: ElementRef;
@@ -269,20 +309,27 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Nombre Geográfico: POI categories from IDECA (Feature Layer, EPSG:4326) */
   nombreGeoCategories: OverlayCategory[] = [
-    { code: 'AMBI',         label: 'Ambiente',                     color: '#2e7d32', emoji: '🌿', checked: false },
-    { code: 'COM-IND-TURI', label: 'Comercio, Industria y Turismo', color: '#e65100', emoji: '🏪', checked: false },
-    { code: 'CULT',         label: 'Cultura',                      color: '#7b1fa2', emoji: '🎭', checked: false },
-    { code: 'DEP-REC',      label: 'Deporte y Recreación',         color: '#1565c0', emoji: '⚽', checked: false },
-    { code: 'EDUC',         label: 'Educación',                    color: '#283593', emoji: '🎓', checked: false },
-    { code: 'FUN-PUB',      label: 'Función Pública',              color: '#546e7a', emoji: '🏛️', checked: false },
-    { code: 'SALUD',        label: 'Salud',                        color: '#c62828', emoji: '🏥', checked: false },
-    { code: 'SEG-JUS',      label: 'Seguridad y Justicia',         color: '#1a237e', emoji: '🛡️', checked: false },
-    { code: 'TRANS',        label: 'Transporte',                   color: '#f9a825', emoji: '🚌', checked: false },
-    { code: 'UNADM',       label: 'Unidad Administrativa',         color: '#00838f', emoji: '📍', checked: false },
+    { code: 'AMBI',         label: 'Ambiente',                     color: '#2e7d32', checked: false },
+    { code: 'COM-IND-TURI', label: 'Comercio, Industria y Turismo', color: '#e65100', checked: false },
+    { code: 'CULT',         label: 'Cultura',                      color: '#7b1fa2', checked: false },
+    { code: 'DEP-REC',      label: 'Deporte y Recreación',         color: '#1565c0', checked: false },
+    { code: 'EDUC',         label: 'Educación',                    color: '#283593', checked: false },
+    { code: 'FUN-PUB',      label: 'Función Pública',              color: '#546e7a', checked: false },
+    { code: 'SALUD',        label: 'Salud',                        color: '#c62828', checked: false },
+    { code: 'SEG-JUS',      label: 'Seguridad y Justicia',         color: '#1a237e', checked: false },
+    { code: 'TRANS',        label: 'Transporte',                   color: '#f9a825', checked: false },
+    { code: 'UNADM',       label: 'Unidad Administrativa',         color: '#00838f', checked: false },
   ];
 
   /** TransMilenio Troncal stations toggle */
   showTroncales: boolean = false;
+  nombreGeoLoading = false;
+  nombreGeoRenderedCount = 0;
+  nombreGeoTotalCount: number | null = null;
+  readonly nearestPoiRows = signal<NearestPoiDistanceRow[]>(this.createNearestPoiRows('idle'));
+  readonly showNearestPoiPanel = computed(() =>
+    this.nearestPoiRows().some((row) => row.status !== 'idle'),
+  );
 
   get checkedNombreGeoCount(): number {
     return this.nombreGeoCategories.filter((c) => c.checked).length;
@@ -294,15 +341,44 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private map!: L.Map;
   private geometryLayer = L.layerGroup();
+  private nearestPoiLayer = L.layerGroup();
   private tiledLayer: any;
   private dynamicLayer: any;
 
-  /** Static GeoJSON layer for Nombre Geográfico POIs */
-  private nombreGeoLayer: L.GeoJSON | null = null;
+  /** Static layer group for Nombre Geográfico POIs */
+  private nombreGeoLayer: L.LayerGroup | null = null;
   /** Static GeoJSON layer for TransMilenio Troncal stations */
   private troncalesLayer: L.GeoJSON | null = null;
   private nombreGeoLoadId = 0;
   private troncalesLoadId = 0;
+  private readonly nearestPoiMarkers = new Map<NearestPoiKind, L.Marker>();
+  private readonly nearestPoiMarkerMeta: Record<
+    NearestPoiKind,
+    { color: string; code: string }
+  > = {
+    hospital: { color: '#c62828', code: 'H' },
+    clinic: { color: '#ad1457', code: 'CL' },
+    cai: { color: '#1a237e', code: 'CAI' },
+    mall: { color: '#e65100', code: 'CC' },
+    tmStation: { color: '#00796b', code: 'TM' },
+    tmPortal: { color: '#6a1b9a', code: 'P' },
+  };
+  private readonly validNombreGeoIconCodes = new Map<string, boolean>();
+  private readonly nombreGeoFeatureCache = new Map<string, NombreGeoFeatureCacheEntry>();
+  private readonly renderedNombreGeoFeatureIds = new Set<string | number>();
+  private readonly nombreGeoFields = [
+    'OBJECTID',
+    'NGEIDENTIF',
+    'NGENOMBRE',
+    'NGECLASIFI',
+    'NGECPOSTAL',
+    'NGENALTERN',
+  ];
+  private readonly nombreGeoPageSize = 2000;
+  private readonly nombreGeoRenderBatchSize = 150;
+  private searchInProgress = false;
+  private nearestPoiDistanceLoadId = 0;
+  private currentLotCenter: L.LatLng | null = null;
 
   private readonly NOMBRE_GEO_URL =
     'https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/sitiosinteres/nombregeografico/MapServer/0';
@@ -331,7 +407,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.searchValue = example;
   }
 
-  constructor(private searchService: SearchService) {}
+  constructor(
+    private searchService: SearchService,
+    private nearestPoiService: NearestPoiService,
+    private ngZone: NgZone,
+  ) {}
 
   ngOnInit(): void {
     this.restoreState();
@@ -344,6 +424,14 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.searchInProgress = false;
+    this.removeNombreGeoLayer();
+    this.removeTroncalesLayer();
+    this.clearNombreGeoCache();
+    this.validNombreGeoIconCodes.clear();
+    this.clearNearestPoiDistances();
+    this.nearestPoiService.clear();
+
     if (this.map) {
       this.map.remove();
     }
@@ -373,12 +461,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     this.geometryLayer.addTo(this.map);
+    this.nearestPoiLayer.addTo(this.map);
 
-    // Restore overlay layers (these are independent of base/filter mode)
-    this.applyNombreGeoOverlay();
-    if (this.showTroncales) {
-      this.addTroncalesLayer();
-    }
+    // Restore overlay layers after the initial Angular view check.
+    setTimeout(() => {
+      this.applyNombreGeoOverlay();
+      if (this.showTroncales) {
+        this.addTroncalesLayer();
+      }
+    }, 0);
   }
 
   private initMarkerIcons(): void {
@@ -492,14 +583,22 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Called when a Nombre Geográfico category checkbox changes */
   onNombreGeoToggle(): void {
-    this.applyNombreGeoOverlay();
+    if (this.searchInProgress) {
+      this.removeNombreGeoLayer();
+    } else {
+      this.applyNombreGeoOverlay();
+    }
     this.saveState();
   }
 
   /** Select all Nombre Geográfico categories */
   selectAllNombreGeo(): void {
     this.nombreGeoCategories.forEach((c) => (c.checked = true));
-    this.applyNombreGeoOverlay();
+    if (this.searchInProgress) {
+      this.removeNombreGeoLayer();
+    } else {
+      this.applyNombreGeoOverlay();
+    }
     this.saveState();
   }
 
@@ -521,7 +620,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /** Create/update the Nombre Geográfico overlay with a global paginated query */
-  private async applyNombreGeoOverlay(): Promise<void> {
+  private async applyNombreGeoOverlay(options: NombreGeoOverlayOptions = {}): Promise<void> {
     this.removeNombreGeoLayer();
 
     const checkedCodes = this.nombreGeoCategories
@@ -532,49 +631,178 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const loadId = ++this.nombreGeoLoadId;
 
-    // Build WHERE clause: NGECLASIFI IN ('AMBI','TRANS',...)
-    const whereClause = `NGECLASIFI IN (${checkedCodes.map((c) => `'${c}'`).join(',')})`;
-
     try {
-      const features = await this.queryAllFeatures(
-        this.NOMBRE_GEO_URL,
-        whereClause,
-        ['OBJECTID', 'NGEIDENTIF', 'NGENOMBRE', 'NGECLASIFI', 'NGECPOSTAL', 'NGENALTERN'],
-        2000,
-      );
+      this.nombreGeoLoading = true;
+      this.nombreGeoRenderedCount = 0;
+      this.nombreGeoTotalCount = options.prioritizeViewport
+        ? null
+        : await this.queryNombreGeoTotalCount(checkedCodes);
 
       if (loadId !== this.nombreGeoLoadId || !this.map) return;
 
-      const featureCollection: EsriFeatureCollection = {
-        type: 'FeatureCollection',
-        features,
-      };
+      this.nombreGeoLayer = L.layerGroup().addTo(this.map);
+      this.renderedNombreGeoFeatureIds.clear();
 
-      this.nombreGeoLayer = L.geoJSON(featureCollection as any, {
-        pointToLayer: (feature: any, latlng: L.LatLng) => {
-          const clasif = feature.properties?.NGECLASIFI || '';
-          const icon = this.createNombreGeoIcon(clasif);
+      if (options.prioritizeViewport) {
+        const completed = await this.renderNombreGeoViewportFirst(checkedCodes, loadId);
+        if (!completed) return;
+      }
 
-          if (icon) {
-            return L.marker(latlng, { icon });
-          }
+      for (const code of checkedCodes) {
+        if (loadId !== this.nombreGeoLoadId || !this.nombreGeoLayer) return;
 
-          return this.createNombreGeoFallbackMarker(feature, latlng);
-        },
-        onEachFeature: (feature: any, layer: L.Layer) => {
-          layer.bindPopup(this.createNombreGeoPopup(feature.properties || {}));
-        },
-      }).addTo(this.map);
-    } catch (error) {
+        const completed = await this.renderNombreGeoCategory(code, loadId);
+        if (!completed) return;
+      }
+    } catch {
+      // Keep the overlay off if the service fails.
+    } finally {
       if (loadId === this.nombreGeoLoadId) {
-        console.error('Error loading Nombre Geográfico features', error);
+        this.nombreGeoLoading = false;
       }
     }
+  }
+
+  private async renderNombreGeoViewportFirst(
+    checkedCodes: string[],
+    loadId: number,
+  ): Promise<boolean> {
+    const bounds = this.map?.getBounds();
+    if (!bounds || !this.nombreGeoLayer) return true;
+
+    for (const code of checkedCodes) {
+      if (loadId !== this.nombreGeoLoadId || !this.nombreGeoLayer) return false;
+
+      const cacheEntry = this.nombreGeoFeatureCache.get(code);
+      if (cacheEntry?.fullyLoaded) {
+        const visibleFeatures = Array.from(cacheEntry.featuresById.values()).filter((feature) =>
+          this.isNombreGeoFeatureInBounds(feature, bounds),
+        );
+        const completed = await this.renderNombreGeoFeatureBatch(
+          visibleFeatures,
+          this.nombreGeoLayer,
+          loadId,
+        );
+        if (!completed) return false;
+        continue;
+      }
+
+      let offset = 0;
+      const whereClause = this.buildNombreGeoWhereForCode(code);
+
+      while (loadId === this.nombreGeoLoadId) {
+        const { featureCollection, response } = await this.queryFeaturePage(
+          this.NOMBRE_GEO_URL,
+          whereClause,
+          this.nombreGeoFields,
+          this.nombreGeoPageSize,
+          offset,
+          bounds,
+        );
+        const pageFeatures = featureCollection?.features || [];
+
+        if (pageFeatures.length === 0 || !this.nombreGeoLayer) break;
+
+        this.cacheNombreGeoFeatures(code, pageFeatures);
+        const completed = await this.renderNombreGeoFeatureBatch(
+          pageFeatures,
+          this.nombreGeoLayer,
+          loadId,
+        );
+
+        if (!completed) return false;
+
+        offset += pageFeatures.length;
+
+        if (!this.shouldFetchNextPage(response, pageFeatures.length, this.nombreGeoPageSize)) {
+          break;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  private async renderNombreGeoCategory(code: string, loadId: number): Promise<boolean> {
+    if (!this.nombreGeoLayer) return false;
+
+    const cacheEntry = this.getNombreGeoCacheEntry(code);
+    if (cacheEntry.fullyLoaded) {
+      return this.renderNombreGeoFeatureBatch(
+        Array.from(cacheEntry.featuresById.values()),
+        this.nombreGeoLayer,
+        loadId,
+      );
+    }
+
+    let offset = 0;
+    const whereClause = this.buildNombreGeoWhereForCode(code);
+
+    while (loadId === this.nombreGeoLoadId) {
+      const { featureCollection, response } = await this.queryFeaturePage(
+        this.NOMBRE_GEO_URL,
+        whereClause,
+        this.nombreGeoFields,
+        this.nombreGeoPageSize,
+        offset,
+      );
+      const pageFeatures = featureCollection?.features || [];
+
+      if (pageFeatures.length === 0 || !this.nombreGeoLayer) break;
+
+      this.cacheNombreGeoFeatures(code, pageFeatures);
+      const completed = await this.renderNombreGeoFeatureBatch(
+        pageFeatures,
+        this.nombreGeoLayer,
+        loadId,
+      );
+
+      if (!completed) return false;
+
+      offset += pageFeatures.length;
+
+      if (!this.shouldFetchNextPage(response, pageFeatures.length, this.nombreGeoPageSize)) {
+        break;
+      }
+    }
+
+    if (loadId === this.nombreGeoLoadId) {
+      cacheEntry.fullyLoaded = true;
+    }
+
+    return loadId === this.nombreGeoLoadId;
+  }
+
+  private async queryNombreGeoTotalCount(codes: string[]): Promise<number | null> {
+    const counts = await Promise.all(
+      codes.map((code) =>
+        this.queryFeatureCount(this.NOMBRE_GEO_URL, this.buildNombreGeoWhereForCode(code)),
+      ),
+    );
+
+    if (counts.some((count) => count === null)) return null;
+
+    return counts.reduce<number>((total, count) => total + (count ?? 0), 0);
+  }
+
+  private buildNombreGeoWhereForCode(code: string): string {
+    return `NGECLASIFI = '${code.replace(/'/g, "''")}'`;
+  }
+
+  private shouldFetchNextPage(response: any, featureCount: number, pageSize: number): boolean {
+    const exceededTransferLimit = Boolean(
+      response?.exceededTransferLimit || response?.properties?.exceededTransferLimit,
+    );
+
+    return exceededTransferLimit || featureCount >= pageSize;
   }
 
   /** Remove the Nombre Geográfico layer */
   private removeNombreGeoLayer(): void {
     this.nombreGeoLoadId++;
+    this.nombreGeoLoading = false;
+    this.nombreGeoRenderedCount = 0;
+    this.nombreGeoTotalCount = null;
     if (this.nombreGeoLayer) {
       if (this.map?.hasLayer(this.nombreGeoLayer)) {
         this.map.removeLayer(this.nombreGeoLayer);
@@ -623,10 +851,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           layer.bindPopup(this.createTroncalesPopup(feature.properties || {}));
         },
       }).addTo(this.map);
-    } catch (error) {
-      if (loadId === this.troncalesLoadId) {
-        console.error('Error loading TransMilenio Troncal features', error);
-      }
+    } catch {
+      // Keep the overlay off if the service fails.
     }
   }
 
@@ -651,7 +877,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     let offset = 0;
 
     while (true) {
-      const { featureCollection, response } = await this.runFeatureQuery(
+      const { featureCollection, response } = await this.queryFeaturePage(
         url,
         where,
         fields,
@@ -675,35 +901,156 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     return features;
   }
 
-  private runFeatureQuery(
+  private queryFeaturePage(
     url: string,
     where: string,
     fields: string[],
     pageSize: number,
     offset: number,
-  ): Promise<{ featureCollection: EsriFeatureCollection; response: any }> {
+    bounds?: L.LatLngBounds,
+  ): Promise<FeatureQueryPage> {
     return new Promise((resolve, reject) => {
-      esri
+      const query = esri
         .query({ url })
         .where(where)
         .fields(fields)
         .returnGeometry(true)
         .offset(offset)
-        .limit(pageSize)
-        .run((error: any, featureCollection: EsriFeatureCollection, response: any) => {
+        .limit(pageSize);
+
+      if (bounds) {
+        query.intersects(bounds);
+      }
+
+      query.run((error: any, featureCollection: EsriFeatureCollection, response: any) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve({ featureCollection, response });
+      });
+    });
+  }
+
+  private queryFeatureCount(url: string, where: string): Promise<number | null> {
+    return new Promise((resolve) => {
+      esri
+        .query({ url })
+        .where(where)
+        .count((error: any, count: number) => {
           if (error) {
-            reject(error);
+            resolve(null);
             return;
           }
 
-          resolve({ featureCollection, response });
+          resolve(count);
         });
+    });
+  }
+
+  private async renderNombreGeoFeatureBatch(
+    features: any[],
+    targetLayer: L.LayerGroup,
+    loadId: number,
+  ): Promise<boolean> {
+    for (let start = 0; start < features.length; start += this.nombreGeoRenderBatchSize) {
+      if (loadId !== this.nombreGeoLoadId) return false;
+
+      const end = Math.min(start + this.nombreGeoRenderBatchSize, features.length);
+      for (let index = start; index < end; index++) {
+        const feature = features[index];
+        const featureId = this.getNombreGeoFeatureId(feature);
+        if (featureId !== null && this.renderedNombreGeoFeatureIds.has(featureId)) continue;
+
+        const layer = this.createNombreGeoFeatureLayer(feature);
+        if (layer) {
+          if (featureId !== null) {
+            this.renderedNombreGeoFeatureIds.add(featureId);
+          }
+          targetLayer.addLayer(layer);
+          this.nombreGeoRenderedCount++;
+        }
+      }
+
+      await this.waitForNextFrame();
+    }
+
+    return true;
+  }
+
+  private getNombreGeoCacheEntry(code: string): NombreGeoFeatureCacheEntry {
+    let entry = this.nombreGeoFeatureCache.get(code);
+    if (!entry) {
+      entry = {
+        featuresById: new Map<string | number, any>(),
+        fullyLoaded: false,
+      };
+      this.nombreGeoFeatureCache.set(code, entry);
+    }
+
+    return entry;
+  }
+
+  private cacheNombreGeoFeatures(code: string, features: any[]): void {
+    const entry = this.getNombreGeoCacheEntry(code);
+
+    features.forEach((feature) => {
+      const featureId = this.getNombreGeoFeatureId(feature);
+      if (featureId !== null) {
+        entry.featuresById.set(featureId, feature);
+      }
+    });
+  }
+
+  private getNombreGeoFeatureId(feature: any): string | number | null {
+    const props = feature?.properties || {};
+    return props.OBJECTID ?? props.objectid ?? props.NGEIDENTIF ?? feature?.id ?? null;
+  }
+
+  private isNombreGeoFeatureInBounds(feature: any, bounds: L.LatLngBounds): boolean {
+    const coordinates = feature?.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return false;
+
+    return bounds.contains(L.latLng(coordinates[1], coordinates[0]));
+  }
+
+  private clearNombreGeoCache(): void {
+    this.nombreGeoFeatureCache.clear();
+    this.renderedNombreGeoFeatureIds.clear();
+  }
+
+  private createNombreGeoFeatureLayer(feature: any): L.Layer | null {
+    const coordinates = feature.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+
+    const latlng = L.latLng(coordinates[1], coordinates[0]);
+    const clasif = feature.properties?.NGECLASIFI || '';
+    const icon = this.createNombreGeoIcon(clasif);
+    const layer = icon
+      ? L.marker(latlng, { icon })
+      : this.createNombreGeoFallbackMarker(feature, latlng);
+
+    layer.bindPopup(this.createNombreGeoPopup(feature.properties || {}));
+    return layer;
+  }
+
+  private waitForNextFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => resolve());
+        return;
+      }
+
+      setTimeout(resolve, 0);
     });
   }
 
   private createNombreGeoIcon(clasif: string): L.DivIcon | null {
     const base64 = NOMBRE_GEO_ICON_BASE64_BY_CODE[clasif];
-    return base64 ? this.createServiceIcon(base64, 38, 'nombre-geo-icon') : null;
+    if (!base64 || !this.isValidNombreGeoIcon(clasif, base64)) return null;
+
+    return this.createServiceIcon(base64, 38, 'nombre-geo-icon');
   }
 
   private createServiceIcon(base64: string, size: number, extraClassName: string): L.DivIcon {
@@ -732,11 +1079,35 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private isValidNombreGeoIcon(clasif: string, base64: string): boolean {
+    const cached = this.validNombreGeoIconCodes.get(clasif);
+    if (typeof cached === 'boolean') return cached;
+
+    const valid = this.isValidPngBase64(base64);
+    this.validNombreGeoIconCodes.set(clasif, valid);
+    return valid;
+  }
+
+  private isValidPngBase64(base64: string): boolean {
+    try {
+      const binary = atob(base64);
+      return (
+        binary.length > 24 &&
+        binary.charCodeAt(0) === 0x89 &&
+        binary.charCodeAt(1) === 0x50 &&
+        binary.charCodeAt(2) === 0x4e &&
+        binary.charCodeAt(3) === 0x47
+      );
+    } catch {
+      return false;
+    }
+  }
+
   private createNombreGeoPopup(props: any): string {
     const cat = this.nombreGeoCategories.find((c) => c.code === props.NGECLASIFI);
 
     return `<div style="max-width:220px;font-size:13px">
-      <strong>${cat?.emoji || '📍'} ${props.NGENOMBRE || 'Sin nombre'}</strong><br>
+      <strong>${props.NGENOMBRE || 'Sin nombre'}</strong><br>
       <span style="color:#666">${cat?.label || props.NGECLASIFI || ''}</span>
       ${props.NGECPOSTAL ? `<br><strong>C.P.:</strong> ${props.NGECPOSTAL}` : ''}
       ${props.NGENALTERN ? `<br><strong>Alt.:</strong> ${props.NGENALTERN}` : ''}
@@ -752,7 +1123,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     const tipo = tipoEstacionMap[props.tipo_estacion] || props.tipo_estacion || '';
 
     return `<div style="max-width:240px;font-size:13px">
-      <strong>🚉 ${props.nombre_estacion || 'Estación'}</strong><br>
+      <strong>${props.nombre_estacion || 'Estación'}</strong><br>
       <span style="color:#666">${props.troncal_estacion || ''}</span>
       ${props.numero_estacion ? `<br><strong>N°:</strong> ${props.numero_estacion}` : ''}
       ${tipo ? `<br><strong>Tipo:</strong> ${tipo}` : ''}
@@ -833,6 +1204,228 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.addDynamicLayer(uniqueIds);
   }
 
+  // ─── Nearest POI Distances ────────────────────────────────────────
+
+  private prepareNearestPoiDistanceSearch(): void {
+    this.currentLotCenter = null;
+    this.nearestPoiDistanceLoadId++;
+    this.clearNearestPoiMarkers();
+    this.nearestPoiRows.set(this.createNearestPoiRows('loading'));
+    console.log('[nearest-poi] busqueda preparada', {
+      loadId: this.nearestPoiDistanceLoadId,
+    });
+  }
+
+  private clearNearestPoiDistances(): void {
+    this.nearestPoiDistanceLoadId++;
+    this.currentLotCenter = null;
+    this.clearNearestPoiMarkers();
+    this.nearestPoiRows.set(this.createNearestPoiRows('idle'));
+    console.log('[nearest-poi] busqueda limpiada', {
+      loadId: this.nearestPoiDistanceLoadId,
+    });
+  }
+
+  private async calculateNearestPoiDistances(center: L.LatLng): Promise<void> {
+    const loadId = ++this.nearestPoiDistanceLoadId;
+    this.clearNearestPoiMarkers();
+    this.nearestPoiRows.set(this.createNearestPoiRows('loading'));
+    console.log('[nearest-poi] inicio busqueda por radio', {
+      loadId,
+      center: {
+        lat: Number(center.lat.toFixed(7)),
+        lng: Number(center.lng.toFixed(7)),
+      },
+      rows: NEAREST_POI_KINDS.map((kind) => NEAREST_POI_LABELS[kind]),
+    });
+
+    NEAREST_POI_KINDS.forEach((kind) => {
+      void this.nearestPoiService
+        .findNearestByKind(kind, center)
+        .then((nearest) => {
+          this.runNearestPoiViewUpdate(() => {
+            if (loadId !== this.nearestPoiDistanceLoadId) {
+              console.log('[nearest-poi] resultado obsoleto ignorado', {
+                kind,
+                label: NEAREST_POI_LABELS[kind],
+                responseLoadId: loadId,
+                activeLoadId: this.nearestPoiDistanceLoadId,
+                nearest,
+              });
+              return;
+            }
+
+            this.updateNearestPoiRow(
+              nearest
+                ? this.createNearestPoiRow(kind, 'ready', nearest)
+                : this.createNearestPoiRow(kind, 'empty'),
+            );
+            console.log('[nearest-poi] fila actualizada', {
+              loadId,
+              kind,
+              label: NEAREST_POI_LABELS[kind],
+              status: nearest ? 'ready' : 'empty',
+              result: nearest,
+            });
+          });
+        })
+        .catch((error) => {
+          this.runNearestPoiViewUpdate(() => {
+            if (loadId !== this.nearestPoiDistanceLoadId) {
+              console.log('[nearest-poi] error obsoleto ignorado', {
+                kind,
+                label: NEAREST_POI_LABELS[kind],
+                responseLoadId: loadId,
+                activeLoadId: this.nearestPoiDistanceLoadId,
+                error,
+              });
+              return;
+            }
+
+            this.updateNearestPoiRow(this.createNearestPoiRow(kind, 'error'));
+            console.error('[nearest-poi] fila con error', {
+              loadId,
+              kind,
+              label: NEAREST_POI_LABELS[kind],
+              error,
+            });
+          });
+        });
+    });
+  }
+
+  private createNearestPoiRows(status: NearestPoiDistanceStatus): NearestPoiDistanceRow[] {
+    return NEAREST_POI_KINDS.map((kind) => this.createNearestPoiRow(kind, status));
+  }
+
+  private createNearestPoiRow(
+    kind: NearestPoiKind,
+    status: NearestPoiDistanceStatus,
+    result?: NearestPoiDistance,
+  ): NearestPoiDistanceRow {
+    return {
+      kind,
+      label: NEAREST_POI_LABELS[kind],
+      status,
+      result,
+    };
+  }
+
+  private updateNearestPoiRow(nextRow: NearestPoiDistanceRow): void {
+    this.nearestPoiRows.update((rows) =>
+      rows.map((row) => (row.kind === nextRow.kind ? nextRow : row)),
+    );
+
+    if (nextRow.status === 'ready' && nextRow.result) {
+      this.renderNearestPoiMarker(nextRow.result);
+    } else if (nextRow.status !== 'loading') {
+      this.removeNearestPoiMarker(nextRow.kind);
+    }
+
+    console.log('[nearest-poi] estado panel', {
+      rows: this.nearestPoiRows().map((row) => ({
+        label: row.label,
+        status: row.status,
+        name: row.result?.name || null,
+        distance: row.result?.formattedDistance || null,
+      })),
+    });
+  }
+
+  private runNearestPoiViewUpdate(update: () => void): void {
+    if (NgZone.isInAngularZone()) {
+      update();
+      return;
+    }
+
+    this.ngZone.run(update);
+  }
+
+  private renderNearestPoiMarker(result: NearestPoiDistance): void {
+    if (!this.map) return;
+
+    this.removeNearestPoiMarker(result.kind);
+
+    const markerMeta = this.nearestPoiMarkerMeta[result.kind];
+    const color = markerMeta.color;
+    const code = this.escapeHtml(markerMeta.code);
+    const label = this.escapeHtml(NEAREST_POI_LABELS[result.kind]);
+    const distance = this.escapeHtml(result.formattedDistance);
+    const name = this.escapeHtml(result.name);
+
+    const icon = L.divIcon({
+      className: 'nearest-poi-map-icon',
+      html: `
+        <div style="position:relative;width:34px;height:42px;">
+          <span style="position:absolute;left:2px;top:0;width:30px;height:30px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 3px 9px rgba(0,0,0,.32);transform:rotate(-45deg);"></span>
+          <span style="position:absolute;left:2px;top:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:white;font:700 10px/1 Arial,sans-serif;text-shadow:0 1px 2px rgba(0,0,0,.35);">
+            ${code}
+          </span>
+        </div>
+      `,
+      iconSize: [34, 42],
+      iconAnchor: [17, 42],
+      popupAnchor: [0, -38],
+      tooltipAnchor: [17, -28],
+    });
+
+    const marker = L.marker([result.lat, result.lng], {
+      icon,
+      zIndexOffset: 900,
+      title: `${NEAREST_POI_LABELS[result.kind]}: ${result.name}`,
+    });
+
+    marker.bindTooltip(
+      `<div style="background:${color};color:white;border:1px solid rgba(255,255,255,.9);border-radius:4px;padding:4px 7px;box-shadow:0 2px 8px rgba(0,0,0,.26);font:600 12px/1.2 Arial,sans-serif;white-space:nowrap;">
+        ${label} · ${distance}
+      </div>`,
+      {
+        permanent: false,
+        direction: 'right',
+        offset: [8, -31],
+        opacity: 1,
+        sticky: true,
+      },
+    );
+
+    marker.bindPopup(
+      `<div style="max-width:240px;font-size:13px">
+        <strong>${label}</strong><br>
+        ${name}<br>
+        <strong>Distancia:</strong> ${distance}
+      </div>`,
+    );
+
+    marker.addTo(this.nearestPoiLayer);
+    this.nearestPoiMarkers.set(result.kind, marker);
+  }
+
+  private removeNearestPoiMarker(kind: NearestPoiKind): void {
+    const marker = this.nearestPoiMarkers.get(kind);
+    if (!marker) return;
+
+    this.nearestPoiLayer.removeLayer(marker);
+    this.nearestPoiMarkers.delete(kind);
+  }
+
+  private clearNearestPoiMarkers(): void {
+    this.nearestPoiMarkers.clear();
+    this.nearestPoiLayer.clearLayers();
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      const entities: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      };
+      return entities[char];
+    });
+  }
+
   // ─── Search ─────────────────────────────────────────────────────────
 
   search(): void {
@@ -842,6 +1435,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.errorMessage = '';
     this.resultInfo = null;
     this.clearAll();
+    this.searchInProgress = true;
+    this.removeNombreGeoLayer();
+    this.removeTroncalesLayer();
+    this.prepareNearestPoiDistanceSearch();
 
     const chipLike = /^[A-Za-z0-9]{8,15}$/;
     const shouldSearchByChip = this.searchType === 'chip' || chipLike.test(value);
@@ -851,11 +1448,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.searchService.searchChipInfo(chip).subscribe({
         next: (res) => {
           this.results = res;
-          console.log('SIIC CHIP info', res);
 
           const loteId = res?.LOTEID || res?.loteId || res?.LOTLOTE_ID;
           if (!loteId) {
             this.errorMessage = 'No se encontró LOTEID para el CHIP ingresado.';
+            this.searchInProgress = false;
+            this.clearNearestPoiDistances();
             return;
           }
 
@@ -869,7 +1467,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         },
         error: (err) => {
           this.errorMessage = 'Error buscando CHIP';
-          console.error(err);
+          this.searchInProgress = false;
+          this.clearNearestPoiDistances();
         },
       });
       return;
@@ -878,10 +1477,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.searchService.searchByAddress(value).subscribe({
       next: (res) => {
         this.results = res;
-        console.log('SIIC dirección', res);
 
         if (res?.Error) {
           this.errorMessage = res.Error;
+          this.searchInProgress = false;
+          this.clearNearestPoiDistances();
           return;
         }
 
@@ -895,11 +1495,14 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
           this.fetchGeometryByLote(String(loteId));
         } else {
           this.errorMessage = 'No se encontró LOTEID para la dirección ingresada.';
+          this.searchInProgress = false;
+          this.clearNearestPoiDistances();
         }
       },
       error: (err) => {
         this.errorMessage = 'Error buscando dirección';
-        console.error(err);
+        this.searchInProgress = false;
+        this.clearNearestPoiDistances();
       },
     });
   }
@@ -908,21 +1511,38 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     this.searchService.searchByLoteId([loteId]).subscribe({
       next: (res) => {
         this.results = res;
-        console.log('Lote geometry', res);
         const features = res.features && res.features.length > 0 ? res.features : [];
 
         if (features.length > 0) {
           this.updateResultInfoFromFeature(features[0]);
-          this.displayFeatures(features);
+          const lotCenter = this.displayFeatures(features);
+          if (lotCenter) {
+            this.currentLotCenter = lotCenter;
+            console.log('[nearest-poi] centro de lote calculado', {
+              loteId,
+              center: {
+                lat: Number(lotCenter.lat.toFixed(7)),
+                lng: Number(lotCenter.lng.toFixed(7)),
+              },
+            });
+            this.calculateNearestPoiDistances(lotCenter);
+          } else {
+            console.warn('[nearest-poi] no se pudo calcular centro de lote', { loteId });
+            this.clearNearestPoiDistances();
+          }
+          this.searchInProgress = false;
         } else {
           this.errorMessage = isChipSearch
             ? 'No se encontraron resultados para el CHIP ingresado.'
             : 'No se encontraron resultados para el LOTEID obtenido de la dirección.';
+          this.searchInProgress = false;
+          this.clearNearestPoiDistances();
         }
       },
       error: (err) => {
         this.errorMessage = isChipSearch ? 'Error buscando CHIP' : 'Error consultando geometría';
-        console.error(err);
+        this.searchInProgress = false;
+        this.clearNearestPoiDistances();
       },
     });
   }
@@ -948,8 +1568,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
-  private displayFeatures(features: any[]): void {
-    if (!this.map || !features || features.length === 0) return;
+  private displayFeatures(features: any[]): L.LatLng | null {
+    if (!this.map || !features || features.length === 0) return null;
 
     this.geometryLayer.clearLayers();
 
@@ -978,7 +1598,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
         paddingTopLeft: [20, 20],
         paddingBottomRight: [80, 20],
       });
+      return bounds.getCenter();
     }
+
+    return null;
   }
 
   private addPolygon(coordinates: L.LatLngExpression[]): L.Polygon | undefined {

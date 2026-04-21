@@ -40,7 +40,6 @@ export class MapUtils {
    */
   static parseRingsToLatLng(rings: number[][][]): L.LatLngExpression[] {
     if (!rings || rings.length === 0) {
-      console.error('Rings vacíos o inválidos');
       return [];
     }
 

@@ -65,6 +65,58 @@
   background: #e0e0e0;
 }
 
+.nearest-poi-panel {
+  border: 1px solid #d6e2d9;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fbfdfb;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nearest-poi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.nearest-poi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.nearest-poi-row {
+  min-height: 42px;
+  border: 1px solid #e2e8e3;
+  border-radius: 5px;
+  background: white;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nearest-poi-row.muted .nearest-poi-value {
+  color: #777;
+}
+
+.nearest-poi-kind {
+  font-size: 12px;
+}
+
+.nearest-poi-value {
+  font-size: 13px;
+}
+
+.nearest-poi-name {
+  margin-left: 6px;
+  overflow-wrap: anywhere;
+}
+
 /* ─── Layer Panel ──────────────────────────────────────────── */
 
 .layer-panel {
@@ -138,6 +190,11 @@
   font-size: 13px;
   color: #555;
   margin-right: auto;
+}
+
+.loading-count {
+  color: #1a5cc8;
+  margin-right: 0;
 }
 
 .action-btn {

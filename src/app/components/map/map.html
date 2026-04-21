@@ -30,6 +30,43 @@
     </button>
   </div>
 
+  <div *ngIf="showNearestPoiPanel()" class="nearest-poi-panel">
+    <div class="nearest-poi-header">
+      <strong>Distancias cercanas</strong>
+      <span class="nearest-poi-origin">Desde el centro del lote</span>
+    </div>
+
+    <div class="nearest-poi-grid">
+      <div
+        *ngFor="let row of nearestPoiRows()"
+        class="nearest-poi-row"
+        [class.loading]="row.status === 'loading'"
+        [class.muted]="row.status === 'empty' || row.status === 'error'"
+      >
+        <span class="nearest-poi-kind">{{ row.label }}</span>
+        <span class="nearest-poi-value" [ngSwitch]="row.status">
+          <span
+            *ngSwitchCase="'loading'"
+            aria-label="Calculando"
+            style="
+              display: block;
+              width: min(160px, 80%);
+              height: 12px;
+              border-radius: 3px;
+              background: #e8eee9;
+            "
+          ></span>
+          <span *ngSwitchCase="'ready'">
+            <strong>{{ row.result?.formattedDistance }}</strong>
+            <span class="nearest-poi-name">{{ row.result?.name }}</span>
+          </span>
+          <span *ngSwitchCase="'empty'">Sin datos</span>
+          <span *ngSwitchCase="'error'">No disponible</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
   <!-- Layer Mode Panel -->
   <div class="layer-panel">
     <div class="layer-header">
@@ -41,7 +78,7 @@
           [class.active]="layerMode === 'base'"
           (click)="setLayerMode('base')"
         >
-          🗺️ Mapa Base
+          Mapa Base
         </button>
         <button
           type="button"
@@ -49,7 +86,7 @@
           [class.active]="layerMode === 'filter'"
           (click)="setLayerMode('filter')"
         >
-          🔍 Filtrar Capas
+          Filtrar Capas
         </button>
       </div>
     </div>
@@ -88,7 +125,7 @@
   <!-- Overlay Layers Panel (works in both modes) -->
   <div class="layer-panel overlay-panel">
     <div class="layer-header">
-      <strong>📍 Capas adicionales</strong>
+      <strong>Capas adicionales</strong>
       <span class="mode-info" style="margin: 0">Funcionan sobre cualquier modo</span>
     </div>
 
@@ -98,6 +135,11 @@
         <strong>Nombre Geográfico</strong>
         <div class="filter-actions">
           <span class="filter-count">{{ checkedNombreGeoCount }} activas</span>
+          <span *ngIf="nombreGeoLoading" class="filter-count loading-count">
+            Cargando {{ nombreGeoRenderedCount }}{{
+              nombreGeoTotalCount !== null ? ' / ' + nombreGeoTotalCount : ''
+            }}
+          </span>
           <button type="button" class="action-btn" (click)="selectAllNombreGeo()">Todas</button>
           <button type="button" class="action-btn" (click)="clearAllNombreGeo()">Ninguna</button>
         </div>
@@ -118,7 +160,7 @@
             class="cat-dot"
             [style.background-color]="cat.color"
           ></span>
-          <span class="group-label">{{ cat.emoji }} {{ cat.label }}</span>
+          <span class="group-label">{{ cat.label }}</span>
         </label>
       </div>
     </div>
@@ -135,7 +177,7 @@
           class="cat-dot"
           style="background-color: #e3192f"
         ></span>
-        <span class="group-label">🚉 Estaciones Troncales TransMilenio</span>
+        <span class="group-label">Estaciones Troncales TransMilenio</span>
       </label>
     </div>
   </div>
